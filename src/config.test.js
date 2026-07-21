@@ -4,6 +4,7 @@ const assert = require('node:assert');
 
 test('config exposes the claim-buyback-burn defaults', () => {
   const config = require('./config');
+  assert.strictEqual(config.burnEthPerCycle, 0.01);
   assert.strictEqual(config.burnUsdPerCycle, 5);
   assert.strictEqual(config.slippagePct, 5);
   assert.strictEqual(config.pollSchedule, '*/5 * * * *');

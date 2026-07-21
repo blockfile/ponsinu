@@ -43,13 +43,20 @@ async function pollOnce(trigger) {
     const spendable = await getClaimableEth(); // wallet WETH + pending locker fees
     state.lastClaimable = spendable;
 
-    // Size the fixed-USD buy against the live ETH price. Hold if we can't price it.
+    // Size the buy. Default: a fixed WETH amount (BURN_ETH_PER_CYCLE) — the
+    // trigger fires every time fees reach it, and the ETH price is display-only.
+    // With BURN_ETH_PER_CYCLE=0, fall back to fixed-USD sizing (needs the price).
     const price = await getEthPriceUsd();
-    if (price == null) {
-      return { ran: false, claimable: spendable, reason: 'ETH price unavailable — cannot size the buy' };
+    let buyEth;
+    if (config.burnEthPerCycle > 0) {
+      buyEth = config.burnEthPerCycle;
+    } else {
+      if (price == null) {
+        return { ran: false, claimable: spendable, reason: 'ETH price unavailable — cannot size the buy' };
+      }
+      buyEth = config.burnUsdPerCycle / price;
     }
-    const buyEth = config.burnUsdPerCycle / price;
-    const spendableUsd = +(spendable * price).toFixed(2);
+    const spendableUsd = price == null ? null : +(spendable * price).toFixed(2);
     state.lastClaimableUsd = spendableUsd;
 
     // Need at least one buy's worth of fees (claimed + pending); otherwise wait.
@@ -58,7 +65,7 @@ async function pollOnce(trigger) {
         ran: false,
         claimable: spendable,
         claimableUsd: spendableUsd,
-        reason: `insufficient fees ($${spendableUsd} < $${config.burnUsdPerCycle})`,
+        reason: `insufficient fees (${+spendable.toFixed(9)} < ${buyEth} WETH)`,
       };
     }
 
@@ -80,8 +87,9 @@ function start() {
   state.task = cron.schedule(config.pollSchedule, () => {
     pollOnce('poll').catch((err) => console.error('[scheduler] poll error:', err));
   });
+  const perCycle = config.burnEthPerCycle > 0 ? `${config.burnEthPerCycle} WETH` : `$${config.burnUsdPerCycle}`;
   console.log(
-    `[scheduler] started — claims fees, buys back $${config.burnUsdPerCycle} + burns on schedule "${config.pollSchedule}" (dryRun=${config.dryRun})`
+    `[scheduler] started — claims fees, buys back ${perCycle} + burns on schedule "${config.pollSchedule}" (dryRun=${config.dryRun})`
   );
 }
 
@@ -116,6 +124,7 @@ async function triggerNow() {
 function getState() {
   return {
     pollSchedule: config.pollSchedule,
+    burnEthPerCycle: config.burnEthPerCycle,
     burnUsdPerCycle: config.burnUsdPerCycle,
     paused: state.paused,
     isRunning: state.isRunning,

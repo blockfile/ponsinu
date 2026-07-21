@@ -2,29 +2,33 @@
 
 **Claim, buyback and burn bot for ponsfamily.com tokens on Robinhood Chain (EVM).**
 
-Every 5 minutes, claim your token's creator fees from the Pons locker and spend
-a fixed dollar amount of them buying the token back and burning it:
+Every 5 minutes, once the creator fees reach 0.01 WETH, claim them from the
+Pons locker and spend them buying the token back and burning it:
 
 ```
-every POLL_SCHEDULE (default */5):
+every POLL_SCHEDULE (default */5), once fees ≥ BURN_ETH_PER_CYCLE (default 0.01 WETH):
   claim the creator fees from the PonsLaunchLocker   (arrive as WETH + the token)
-    → buy back BURN_USD_PER_CYCLE (default $5) of the token   (Uniswap V3, WETH in)
-    → BURN what was bought + the claimed token fees  (send to 0x…dEaD — gone forever)
+    → buy back BURN_ETH_PER_CYCLE of the token       (Uniswap V3, WETH in)
+    → BURN the wallet's ENTIRE token balance: what was bought + the claimed
+      token fees + any residue           (send to 0x…dEaD — gone forever)
 ```
 
-When the fees (wallet WETH + pending in the locker) don't yet cover the next
-buy, the cycle is skipped and retried on the following tick, so fees simply
-accumulate until there's a buy's worth.
+When the fees (wallet WETH + pending in the locker) haven't reached 0.01 WETH
+yet, the cycle is skipped and retried on the following tick, so fees simply
+accumulate until there's a buy's worth — i.e. the burn fires every 0.01 ETH of
+fees earned. (Set `BURN_ETH_PER_CYCLE=0` to size the buy in USD via
+`BURN_USD_PER_CYCLE` instead.)
 
 Everything runs in `DRY_RUN=true` by default — all on-chain calls are simulated
 and no funds are ever touched until you flip it off.
 
 ## What "burn" means here
 
-The bot sends the tokens it just bought (plus the token-side fees each claim
-delivers) to the **dead address** (`0x…dEaD`). The dead address has no private
-key, so those tokens can never move again — they're permanently out of
-circulation and show up as burned on the explorer.
+Each cycle the bot sends the dev wallet's **entire balance of the token** — the
+tokens it just bought, the token-side fees each claim delivers, and any residue
+left over from earlier cycles — to the **dead address** (`0x…dEaD`). The dead
+address has no private key, so those tokens can never move again — they're
+permanently out of circulation and show up as burned on the explorer.
 
 ## How the funding works (verified on-chain)
 
@@ -65,11 +69,12 @@ the only per-token setting.
 
 | Env | Default | Meaning |
 |---|---|---|
-| `BURN_USD_PER_CYCLE` | `5` | USD of the token bought back + burned each cycle |
+| `BURN_ETH_PER_CYCLE` | `0.01` | WETH bought back + burned each cycle — the trigger fires every time fees reach this |
+| `BURN_USD_PER_CYCLE` | `5` | USD sizing fallback, used only when `BURN_ETH_PER_CYCLE=0` |
 | `POLL_SCHEDULE` | `*/5 * * * *` | how often the scheduler ticks (every 5 min) |
 | `SLIPPAGE_PCT` | `5` | V3 buy slippage tolerance (on top of the pool fee) |
 | `CLAIM_MIN_WETH` | `0.0005` | skip the claim leg while pending WETH is below this (unless the buy needs it) |
-| `BURN_CLAIMED_TOKENS` | `true` | burn the token-side fees that arrive with each claim |
+| `BURN_CLAIMED_TOKENS` | `true` | burn the wallet's whole token balance each cycle (claimed token fees + residue); `false` = only the buyback |
 | `DEAD_ADDRESS` | `0x…dEaD` | burn sink for the bought tokens |
 | `GAS_RESERVE_ETH` | `0.005` | native ETH floor for gas (auto topped-up from WETH) |
 | `LOCKER_ADDRESS` | RH locker | the PonsLaunchLocker holding the LP + paying the fees |

@@ -59,9 +59,10 @@ router.get('/status', async (req, res, next) => {
       token: {
         address: config.tokenAddress,
       },
-      // Buyback-and-burn loop parameters (trigger, $ per cycle).
+      // Buyback-and-burn loop parameters (trigger, per-cycle burn size).
       config: {
         pollSchedule: config.pollSchedule,
+        burnEthPerCycle: config.burnEthPerCycle,
         burnUsdPerCycle: config.burnUsdPerCycle,
         deadAddress: config.deadAddress,
       },

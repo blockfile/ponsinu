@@ -3,9 +3,11 @@
 // Buys the token with WETH through the Uniswap V3 SwapRouter02 — the canonical
 // router bound to the same V3 factory the ponsfamily launch pool lives on.
 // Creator fees arrive as WETH (ERC-20), so the swap is a plain exactInputSingle
-// (WETH → token) on the launch pool's fee tier; no wrapping needed. The
-// minimum-out is sized from the pool's spot price (slot0) with the pool fee and
-// SLIPPAGE_PCT haircut, and what actually lands is counted via balance delta.
+// (WETH → token) on the launch pool's fee tier; no wrapping needed. NOTE the
+// SwapRouter02 struct has NO deadline field — the with-deadline signature is
+// the classic SwapRouter and reverts here. The minimum-out is sized by
+// static-calling the swap itself (real fill: pool fee + price impact included)
+// minus SLIPPAGE_PCT, and what actually lands is counted via balance delta.
 
 const { Contract, parseEther, formatEther } = require('ethers');
 const config = require('../config');
@@ -27,7 +29,9 @@ function fakeSig(prefix) {
 /**
  * Expected token output for `amountInWei` of WETH at the pool's CURRENT spot
  * price (slot0), before the fee/slippage haircut. Exact in raw units, so token
- * decimals never enter the math.
+ * decimals never enter the math. Used by the read-only preflight (which can't
+ * static-call the swap — the wallet may hold no WETH yet); buyToken itself
+ * quotes by static-calling the swap.
  * @returns {Promise<bigint>}
  */
 async function quoteSpotOut(amountInWei) {
@@ -87,31 +91,35 @@ async function buyToken(token, wethAmount) {
   await ensureRouterAllowance(amountIn);
   const router = new Contract(config.swapRouter, ROUTER_ABI, wallet);
 
+  const params = (amountOutMinimum) => ({
+    tokenIn: config.weth,
+    tokenOut: token,
+    fee: info.poolFee,
+    recipient: wallet.address,
+    amountIn,
+    amountOutMinimum,
+    sqrtPriceLimitX96: 0n,
+  });
+
   // Re-quote and re-send up to BUY_ATTEMPTS: a one-block price move can revert
   // the send on the min-output check; wait out the spike and retry rather than
-  // fail the cycle. The pool fee is deducted before the slippage budget.
+  // fail the cycle. The quote is a static call of the swap itself (min-out 0),
+  // so the returned fill already includes the pool fee and price impact — only
+  // the slippage haircut is applied on top.
   let lastErr;
   for (let attempt = 1; attempt <= BUY_ATTEMPTS; attempt++) {
     let amountOutMin;
     try {
-      const spotOut = await quoteSpotOut(amountIn);
-      const afterFee = (spotOut * BigInt(1_000_000 - info.poolFee)) / 1_000_000n;
-      amountOutMin = (afterFee * BigInt(Math.round((100 - config.slippagePct) * 100))) / 10_000n;
+      const quoted = await router.exactInputSingle.staticCall(params(0n));
+      if (quoted === 0n) throw new Error('swap quote returned 0 — no pool liquidity?');
+      amountOutMin = (quoted * BigInt(Math.round((100 - config.slippagePct) * 100))) / 10_000n;
     } catch (err) {
       throw new Error(`pool quote failed for ${token} (pool ${info.pool}): ${err.shortMessage || err.message}`);
     }
 
     try {
       const balBefore = await readTokenBalance(token, wallet.address);
-      const tx = await router.exactInputSingle({
-        tokenIn: config.weth,
-        tokenOut: token,
-        fee: info.poolFee,
-        recipient: wallet.address,
-        amountIn,
-        amountOutMinimum: amountOutMin,
-        sqrtPriceLimitX96: 0n,
-      });
+      const tx = await router.exactInputSingle(params(amountOutMin));
       await tx.wait();
       console.log(`[tx] buy ${token} with ${wethAmount} WETH via SwapRouter02: ${tx.hash}`);
       const balAfter = await readTokenBalance(token, wallet.address);

@@ -75,14 +75,20 @@ const config = {
   // Every POLL_SCHEDULE, claim the creator fees from the locker (WETH + tokens),
   // spend BURN_USD_PER_CYCLE worth of WETH buying the token, and burn what was
   // bought PLUS the token-side fees (send to DEAD_ADDRESS — gone forever).
-  burnUsdPerCycle: num(process.env.BURN_USD_PER_CYCLE, 5), // USD spent buying + burning each cycle
+  // Per-cycle burn size in WETH — the trigger fires every time wallet WETH +
+  // pending locker fees reach this, and the buy needs no price feed to run.
+  // Set to 0 to size the buy in USD instead (BURN_USD_PER_CYCLE).
+  burnEthPerCycle: num(process.env.BURN_ETH_PER_CYCLE, 0.01),
+  burnUsdPerCycle: num(process.env.BURN_USD_PER_CYCLE, 5), // USD sizing fallback when BURN_ETH_PER_CYCLE=0
   slippagePct: num(process.env.SLIPPAGE_PCT, 5), // V3 buy-swap slippage, percent
   gasReserveEth: num(process.env.GAS_RESERVE_ETH, 0.005), // native ETH floor for gas; topped up by unwrapping WETH
   // Skip the claim leg when the pending creator WETH is below this (saves gas on
   // dust claims); the claim always runs when it's needed to fund the buy.
   claimMinWeth: num(process.env.CLAIM_MIN_WETH, 0.0005),
-  // Burn the token-side fees that arrive with each claim (default true) — LP fees
-  // accrue in BOTH pool tokens, so the token half can be burned without a swap.
+  // Burn the wallet's ENTIRE token balance each cycle (default true) — LP fees
+  // accrue in BOTH pool tokens, so every claim delivers token-side fees; those,
+  // plus any residue in the dev wallet, are burned along with the buyback.
+  // false = burn only what the cycle's buyback bought.
   burnClaimedTokens: bool(process.env.BURN_CLAIMED_TOKENS, true),
   // Burn sink for the bought tokens. Default is the canonical EVM dead address.
   deadAddress: lowerOrNull(process.env.DEAD_ADDRESS) || '0x000000000000000000000000000000000000dead',

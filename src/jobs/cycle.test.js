@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
-test('runCycle (DRY_RUN): claim → buy back $5 → burn (bought + claimed fees)', async () => {
+test('runCycle (DRY_RUN): claim → buy back 0.01 WETH → burn (bought + claimed fees)', async () => {
   process.env.DRY_RUN = 'true';
   process.env.TOKEN_ADDRESS = '0x00000000000000000000000000000000000a1b69';
   process.env.BURN_USD_PER_CYCLE = '5';
@@ -18,7 +18,7 @@ test('runCycle (DRY_RUN): claim → buy back $5 → burn (bought + claimed fees)
   const { runCycle } = require('./cycle');
   await db.connect();
   try {
-    price._prime(3000); // $3000/ETH → a $5 buy is ~0.001667 WETH
+    price._prime(3000); // display-only in ETH mode — the trigger needs no price
     // 0.05 WETH + 1000 tokens of creator fees pending in the locker.
     simvault.reset({ pendingWeth: 0.05, pendingTokens: 1000 });
     const cycle = await runCycle();
@@ -28,9 +28,9 @@ test('runCycle (DRY_RUN): claim → buy back $5 → burn (bought + claimed fees)
     // Full loop: claim from the locker, then buy, then burn.
     assert.deepStrictEqual(cycle.steps.map((s) => s.name), ['claim', 'buy', 'burn']);
 
-    // Claims the whole pending WETH side, spends ~$5 of it on the buy.
+    // Claims the whole pending WETH side, spends BURN_ETH_PER_CYCLE on the buy.
     assert.strictEqual(cycle.eth_claimed, 0.05);
-    assert.ok(Math.abs(cycle.eth_spent_buy - 5 / 3000) < 1e-6, 'spends ~$5 of WETH');
+    assert.strictEqual(cycle.eth_spent_buy, 0.01, 'spends the fixed 0.01 WETH per cycle');
     assert.ok(cycle.tokens_bought > 0);
 
     // Burns what it bought PLUS the claimed token-side fees.
@@ -104,7 +104,7 @@ test('runCycle (DRY_RUN): not enough fees → skipped', async () => {
   await db.connect();
   try {
     price._prime(3000);
-    simvault.reset({ pendingWeth: 0.0005 }); // ~$1.50 of fees — below the $5 buy
+    simvault.reset({ pendingWeth: 0.0005 }); // below the 0.01 WETH per-cycle buy
     const cycle = await runCycle();
     assert.strictEqual(cycle.status, 'skipped');
     assert.ok(!cycle.steps.some((s) => s.name === 'claim'));

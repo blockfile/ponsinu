@@ -9,13 +9,18 @@ const {
   toPublicStats,
 } = require('./format');
 
-test('buildUnclaimedPayload reports the live balance and the USD claim threshold', () => {
+test('buildUnclaimedPayload reports the live balance and the claim threshold', () => {
   const out = buildUnclaimedPayload(0.5, 3000);
-  assert.deepStrictEqual(Object.keys(out).sort(), ['claimThresholdUsd', 'ethPriceUsd', 'unclaimedEth', 'unclaimedUsd']);
+  assert.deepStrictEqual(
+    Object.keys(out).sort(),
+    ['claimThresholdEth', 'claimThresholdUsd', 'ethPriceUsd', 'unclaimedEth', 'unclaimedUsd']
+  );
   assert.strictEqual(out.unclaimedEth, 0.5);
   assert.strictEqual(out.unclaimedUsd, 1500);
   assert.strictEqual(out.ethPriceUsd, 3000);
-  assert.strictEqual(typeof out.claimThresholdUsd, 'number');
+  // Default trigger is ETH-denominated: 0.01 WETH per cycle (~$30 @ $3000).
+  assert.strictEqual(out.claimThresholdEth, 0.01);
+  assert.strictEqual(out.claimThresholdUsd, 30);
   assert.strictEqual(buildUnclaimedPayload(null, 3000).unclaimedEth, null);
 });
 

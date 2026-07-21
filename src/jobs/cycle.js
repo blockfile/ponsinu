@@ -1,13 +1,13 @@
 'use strict';
 
-const { formatEther } = require('ethers');
+const { formatEther, formatUnits } = require('ethers');
 const config = require('../config');
 const repo = require('../db/repository');
 const { buyToken } = require('../evm/swap');
 const { burnToken } = require('../evm/burn');
 const { getPendingCreatorFees, getWalletWeth, collectCreatorFees } = require('../evm/pons');
 const { getEthPriceUsd } = require('../evm/price');
-const { unwrapWeth } = require('../evm/erc20');
+const { unwrapWeth, readTokenBalance, getDecimals } = require('../evm/erc20');
 const { provider, wallet } = require('../evm/provider');
 const simvault = require('../evm/simvault');
 
@@ -17,7 +17,8 @@ const simvault = require('../evm/simvault');
  *   claim the creator share of the locked-LP trading fees from the
  *   PonsLaunchLocker (arrives as WETH + the token itself)
  *     → spend BURN_USD_PER_CYCLE worth of WETH buying the token on the V3 pool
- *     → BURN what was bought PLUS the claimed token-side fees (→ DEAD_ADDRESS)
+ *     → BURN the wallet's entire token balance: what was bought PLUS the
+ *       claimed token-side fees PLUS any residue (→ DEAD_ADDRESS)
  *
  * The claim leg is skipped when the pending WETH is dust (< CLAIM_MIN_WETH) and
  * the wallet already holds enough WETH for the buy. If wallet + pending WETH
@@ -34,17 +35,22 @@ async function runCycle(buyEthArg) {
   try {
     if (!config.tokenAddress) throw new Error('TOKEN_ADDRESS is required');
 
-    // 1. Size the buy: BURN_USD_PER_CYCLE converted to WETH at the live price.
+    // 1. Size the buy: a fixed BURN_ETH_PER_CYCLE of WETH (default — no price
+    //    feed needed), or BURN_USD_PER_CYCLE at the live price when it's 0.
     let buyEth = buyEthArg;
     let price = null;
     if (buyEth == null) {
-      price = await getEthPriceUsd();
-      if (!(price > 0)) {
-        await repo.finishCycle(id, { status: 'skipped', note: 'ETH price unavailable — cannot size the buy' });
-        log('skipped: no ETH price');
-        return repo.getCycleWithSteps(id);
+      if (config.burnEthPerCycle > 0) {
+        buyEth = config.burnEthPerCycle;
+      } else {
+        price = await getEthPriceUsd();
+        if (!(price > 0)) {
+          await repo.finishCycle(id, { status: 'skipped', note: 'ETH price unavailable — cannot size the buy' });
+          log('skipped: no ETH price');
+          return repo.getCycleWithSteps(id);
+        }
+        buyEth = config.burnUsdPerCycle / price;
       }
-      buyEth = config.burnUsdPerCycle / price;
     }
     buyEth = +buyEth.toFixed(9);
     if (!(buyEth > 0)) {
@@ -110,18 +116,24 @@ async function runCycle(buyEthArg) {
     log(`bought ${buy.tokensBought} ${config.tokenSymbol}`);
     if (config.dryRun) simvault.spendWeth(buyEth);
 
-    // 6. Burn everything we just bought, plus the token-side fees the claim
-    //    delivered (BURN_CLAIMED_TOKENS, default on).
+    // 6. Burn the wallet's ENTIRE token balance (BURN_CLAIMED_TOKENS, default
+    //    on): the buyback, the token-side fees every claim delivers, and any
+    //    residue from earlier cycles (e.g. a claim whose burn leg failed).
+    //    ponsfamily claims pay tokens on every claim — all of it goes to dEaD.
     let burnRaw = BigInt(buy.tokensBoughtRaw);
     let claimedTokensBurned = 0;
-    if (config.burnClaimedTokens && claim) {
+    if (config.burnClaimedTokens) {
       if (config.dryRun) {
         const t = simvault.takeTokens();
         claimedTokensBurned = t;
         burnRaw += BigInt(Math.round(t)) * 10n ** 18n;
-      } else if (BigInt(claim.tokensClaimedRaw) > 0n) {
-        claimedTokensBurned = claim.tokensClaimed;
-        burnRaw += BigInt(claim.tokensClaimedRaw);
+      } else {
+        const walletBal = await readTokenBalance(config.tokenAddress, wallet.address);
+        if (walletBal > burnRaw) {
+          const decimals = await getDecimals(config.tokenAddress);
+          claimedTokensBurned = Number(formatUnits(walletBal - burnRaw, decimals));
+          burnRaw = walletBal;
+        }
       }
     }
     const burn = await burnToken(config.tokenAddress, burnRaw.toString());
@@ -138,13 +150,12 @@ async function runCycle(buyEthArg) {
         fromClaimedFees: claimedTokensBurned,
       },
     });
-    log(`burned ${burn.burned} ${config.tokenSymbol} (${buy.tokensBought} bought + ${claimedTokensBurned} claimed fees) → ${burn.deadAddress}`);
+    log(`burned ${burn.burned} ${config.tokenSymbol} (${buy.tokensBought} bought + ${claimedTokensBurned} claimed fees/wallet residue) → ${burn.deadAddress}`);
 
     // 7. Done.
     await repo.finishCycle(id, {
       status: 'complete',
       mode: 'claim-buyback-burn',
-      usd_target: config.burnUsdPerCycle,
       eth_claimed: claim ? claim.wethClaimed : 0,
       eth_spent_buy: buyEth,
       tokens_bought: buy.tokensBought,

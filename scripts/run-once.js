@@ -1,7 +1,8 @@
 'use strict';
 
-// Run ONE full cycle (claim creator fees → buy back $BURN_USD_PER_CYCLE of the
-// token → burn it + the claimed token fees) and record it. The integration test.
+// Run ONE full cycle (claim creator fees → buy back BURN_ETH_PER_CYCLE WETH of
+// the token → burn the wallet's whole token balance) and record it. The
+// integration test.
 //   node scripts/run-once.js [--confirm]
 const { requireConfirm, hr } = require('./_util');
 const db = require('../src/db');

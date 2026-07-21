@@ -14,7 +14,8 @@ const { config, provider, wallet, hr } = require('./_util');
   console.log('rpcUrl     :', config.rpcUrl, `(chain ${config.chainId})`);
   console.log('wallet     :', wallet.address, config.walletIsEphemeral ? '⚠️ EPHEMERAL — set WALLET_PRIVATE_KEY' : '');
   console.log('token      :', config.tokenAddress || '⚠️ MISSING — set TOKEN_ADDRESS');
-  console.log('buy/burn   :', `$${config.burnUsdPerCycle} bought back + burned per cycle (${config.pollSchedule})`);
+  const perCycle = config.burnEthPerCycle > 0 ? `${config.burnEthPerCycle} WETH` : `$${config.burnUsdPerCycle}`;
+  console.log('buy/burn   :', `${perCycle} bought back + burned per cycle (${config.pollSchedule})`);
   console.log('deadAddr   :', config.deadAddress, '(burn sink)');
   console.log('locker     :', config.locker, '(PonsLaunchLocker — collectFees claims the creator fees)');
   console.log('router     :', config.swapRouter, '(Uniswap V3 SwapRouter02 — WETH → token buy path)');
@@ -78,19 +79,20 @@ const { config, provider, wallet, hr } = require('./_util');
     console.log('             (either no fees have accrued yet, or this wallet is not allowed to claim)');
   }
   const total = wethBal + pending.weth;
-  console.log('fuel total :', +total.toFixed(9), `WETH (a cycle needs ~$${config.burnUsdPerCycle})`);
+  console.log('fuel total :', +total.toFixed(9), `WETH (a cycle needs ${perCycle})`);
 
-  // Spot-price quote for a real BURN_USD_PER_CYCLE buy (read-only) — proves the
-  // V3 pool is live and the quote math works.
+  // Spot-price quote for a real per-cycle buy (read-only) — proves the V3 pool
+  // is live and the quote math works.
   const { getEthPriceUsd } = require('../src/evm/price');
   const { quoteSpotOut } = require('../src/evm/swap');
   const { parseEther } = require('ethers');
   const price = await getEthPriceUsd();
-  const buyEth = price > 0 ? config.burnUsdPerCycle / price : 0.001;
+  const buyEth =
+    config.burnEthPerCycle > 0 ? config.burnEthPerCycle : price > 0 ? config.burnUsdPerCycle / price : 0.001;
   try {
     const out = await quoteSpotOut(parseEther(buyEth.toFixed(9)));
     const decimals = await getDecimals(config.tokenAddress);
-    console.log('pool quote :', `$${config.burnUsdPerCycle} (${buyEth.toFixed(6)} WETH) → ~${formatUnits(out, decimals)} tokens (spot, before fee) ✓ buy path OK`);
+    console.log('pool quote :', `${buyEth.toFixed(6)} WETH → ~${formatUnits(out, decimals)} tokens (spot, before fee) ✓ buy path OK`);
   } catch (e) {
     console.log('⚠️ pool quote failed:', e.shortMessage || e.message, '— check TOKEN_ADDRESS');
   }

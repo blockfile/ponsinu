@@ -118,13 +118,16 @@ function toPublicStats({ stats, unclaimedEth, operatingWallet, market = {} }) {
 
 // The rewards-available card payload (used by /api/unclaimed and the SSE stream).
 // `unclaimedEth` is now the spendable ETH rewards in the wallet, waiting to be
-// spent on the next buyback; `claimThresholdUsd` carries the per-cycle burn size.
+// spent on the next buyback; the claimThreshold* fields carry the per-cycle burn
+// size (ETH-denominated by default; USD when BURN_ETH_PER_CYCLE=0).
 function buildUnclaimedPayload(eth, price) {
+  const ethMode = config.burnEthPerCycle > 0;
   return {
     unclaimedEth: eth == null ? null : +eth.toFixed(9),
     unclaimedUsd: toUsd(eth, price),
     ethPriceUsd: price,
-    claimThresholdUsd: config.burnUsdPerCycle,
+    claimThresholdEth: ethMode ? config.burnEthPerCycle : null,
+    claimThresholdUsd: ethMode ? toUsd(config.burnEthPerCycle, price) : config.burnUsdPerCycle,
   };
 }
 

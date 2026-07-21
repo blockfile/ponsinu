@@ -98,6 +98,21 @@ function lockerContract(signer = null) {
   return new Contract(config.locker, LOCKER_ABI, signer || provider);
 }
 
+// The locker's protocol cut for our token, percent (the creator receives the
+// remaining 100 - share). Cached per process; falls back to 10 (the value at
+// deployment) if the read fails.
+let protocolSharePctCache = null;
+async function getProtocolFeeSharePct() {
+  if (protocolSharePctCache != null) return protocolSharePctCache;
+  try {
+    const share = Number(await lockerContract().tokenProtocolFeeShares(config.tokenAddress));
+    protocolSharePctCache = Number.isFinite(share) && share >= 0 && share <= 100 ? share : 10;
+  } catch (_err) {
+    protocolSharePctCache = 10;
+  }
+  return protocolSharePctCache;
+}
+
 /**
  * The creator fees currently pending in the locker for our token, WITHOUT
  * claiming them: a static call of collectFees from the wallet. Reverts from
@@ -117,10 +132,16 @@ async function getPendingCreatorFees() {
       from: wallet.address,
     });
     const [wethRaw, tokensRaw] = info.wethIsToken0 ? [amount0, amount1] : [amount1, amount0];
+    // collectFees pulls the position's fees and keeps the locker's protocol cut
+    // before paying the creator, so haircut the estimate to the creator share.
+    // Conservative either way: if the return were already net, we'd merely
+    // undercount ~10% and wait one extra tick before spending.
+    const protocolPct = await getProtocolFeeSharePct();
+    const creatorShare = (raw) => (BigInt(raw) * BigInt(Math.round((100 - protocolPct) * 100))) / 10000n;
     const decimals = await getDecimals(config.tokenAddress);
     return {
-      weth: Number(formatEther(wethRaw)),
-      tokens: Number(formatUnits(tokensRaw, decimals)),
+      weth: Number(formatEther(creatorShare(wethRaw))),
+      tokens: Number(formatUnits(creatorShare(tokensRaw), decimals)),
       authorized: true,
     };
   } catch (err) {
@@ -214,6 +235,7 @@ module.exports = {
   POOL_ABI,
   getLaunchInfo,
   lockerContract,
+  getProtocolFeeSharePct,
   getPendingCreatorFees,
   collectCreatorFees,
   getWalletWeth,
