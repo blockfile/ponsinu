@@ -1,0 +1,32 @@
+{
+  "name": "ponsinu",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claim, buyback and burn bot for ponsfamily.com tokens on Robinhood Chain: claims the creator share of the locked-LP trading fees (WETH + token), buys the token back on Uniswap V3 and burns it on a timer (DRY_RUN first).",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test",
+    "check": "node scripts/check.js",
+    "claim": "node scripts/claim.js",
+    "buy": "node scripts/buy.js",
+    "burn": "node scripts/burn.js",
+    "run-once": "node scripts/run-once.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "ethers": "^6.13.5",
+    "express": "^4.21.2",
+    "mongodb": "^6.12.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^10.1.4"
+  }
+}
