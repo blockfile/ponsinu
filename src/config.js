@@ -62,7 +62,11 @@ const config = {
   // from the locker via collectFees(token). The pool + fee tier are read straight
   // off the token contract at runtime (see src/evm/pons.js).
   weth: lowerOrNull(process.env.WETH_ADDRESS) || '0x0bd7d308f8e1639fab988df18a8011f41eacad73',
-  locker: lowerOrNull(process.env.LOCKER_ADDRESS) || '0x31ca5e101941a93a7dd6d0497928700625cf54b5',
+  // PonsLaunchLocker override. Leave unset (null) to auto-discover the locker
+  // from the token's launchFactory().locker() at runtime — factory deployments
+  // change, and claiming against the wrong locker silently never pays. The
+  // discovered value is verified as the owner of the launch LP position.
+  locker: lowerOrNull(process.env.LOCKER_ADDRESS) || null,
   // Uniswap V3 SwapRouter02 on Robinhood Chain — the buy path (WETH → token).
   swapRouter: lowerOrNull(process.env.SWAP_ROUTER_ADDRESS) || '0xcaf681a66d020601342297493863e78c959e5cb2',
 

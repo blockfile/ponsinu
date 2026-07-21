@@ -7,7 +7,7 @@
 // Without --confirm this only PREVIEWS what is claimable (a static call — no
 // transaction). The wallet must be the token's deployer.
 const { config, hr, requireConfirm } = require('./_util');
-const { getPendingCreatorFees, collectCreatorFees } = require('../src/evm/pons');
+const { getPendingCreatorFees, collectCreatorFees, getLaunchInfo } = require('../src/evm/pons');
 
 (async () => {
   hr('CLAIM CREATOR FEES');
@@ -21,7 +21,8 @@ const { getPendingCreatorFees, collectCreatorFees } = require('../src/evm/pons')
     console.log('   (either no fees have accrued yet, or this wallet is not the token\'s deployer)');
   }
 
-  if (!(await requireConfirm(`claim the creator fees from the locker ${config.locker}`))) {
+  const locker = config.dryRun ? '(simulated)' : (await getLaunchInfo()).locker;
+  if (!(await requireConfirm(`claim the creator fees from the locker ${locker}`))) {
     process.exit(0);
   }
   const result = await collectCreatorFees();

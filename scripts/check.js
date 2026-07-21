@@ -17,7 +17,7 @@ const { config, provider, wallet, hr } = require('./_util');
   const perCycle = config.burnEthPerCycle > 0 ? `${config.burnEthPerCycle} WETH` : `$${config.burnUsdPerCycle}`;
   console.log('buy/burn   :', `${perCycle} bought back + burned per cycle (${config.pollSchedule})`);
   console.log('deadAddr   :', config.deadAddress, '(burn sink)');
-  console.log('locker     :', config.locker, '(PonsLaunchLocker — collectFees claims the creator fees)');
+  console.log('locker     :', config.locker || 'auto — discovered from the token\'s launchFactory()', '(PonsLaunchLocker — collectFees claims the creator fees)');
   console.log('router     :', config.swapRouter, '(Uniswap V3 SwapRouter02 — WETH → token buy path)');
   console.log('weth       :', config.weth);
 
@@ -48,6 +48,7 @@ const { config, provider, wallet, hr } = require('./_util');
   const { getWethBalanceEth, getDecimals } = require('../src/evm/erc20');
   const info = await getLaunchInfo();
   console.log('V3 pool    :', info.pool, `(fee tier ${info.poolFee / 10000}%)`);
+  console.log('locker     :', info.locker, config.locker ? '(LOCKER_ADDRESS override)' : '(auto-discovered from the launch factory ✓)');
   console.log('pairToken  :', info.pairToken, info.pairToken === config.weth ? '(WETH ✓)' : '⚠️ NOT the configured WETH — buy path assumes WETH');
   console.log('deployer   :', info.deployer, info.deployer === wallet.address.toLowerCase() ? '(this wallet ✓)' : '⚠️ NOT this wallet — only the deployer can claim the creator fees');
   if (info.restrictionEndBlock != null) {

@@ -57,7 +57,7 @@ unwrapping a little WETH whenever the native balance runs low.
 | RPC | `https://rpc.mainnet.chain.robinhood.com` |
 | Explorer | `https://robinhoodchain.blockscout.com` |
 | Reward currency | WETH + the token (claimed from the locker by the deployer) |
-| PonsLaunchLocker (claim path) | `0x31ca5E101941A93A7DD6d0497928700625CF54B5` (override via `LOCKER_ADDRESS`) |
+| PonsLaunchLocker (claim path) | auto-discovered from the token's `launchFactory().locker()` (currently `0x736D76699C26D0d966744cAe304C000d471f7F35`; force via `LOCKER_ADDRESS`) |
 | Uniswap V3 SwapRouter02 (buy path) | `0xCaf681a66D020601342297493863E78C959E5cb2` (override via `SWAP_ROUTER_ADDRESS`) |
 | WETH | `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` |
 
@@ -77,7 +77,7 @@ the only per-token setting.
 | `BURN_CLAIMED_TOKENS` | `true` | burn the wallet's whole token balance each cycle (claimed token fees + residue); `false` = only the buyback |
 | `DEAD_ADDRESS` | `0x…dEaD` | burn sink for the bought tokens |
 | `GAS_RESERVE_ETH` | `0.005` | native ETH floor for gas (auto topped-up from WETH) |
-| `LOCKER_ADDRESS` | RH locker | the PonsLaunchLocker holding the LP + paying the fees |
+| `LOCKER_ADDRESS` | *(auto)* | override for the PonsLaunchLocker; blank = read it off the token's launch factory |
 | `SWAP_ROUTER_ADDRESS` | RH SwapRouter02 | the Uniswap V3 router that buys the token with WETH |
 
 ## Quick start

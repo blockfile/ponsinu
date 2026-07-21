@@ -39,6 +39,9 @@ const LOCKER_ABI = [
   'function tokenProtocolFeeShares(address token) view returns (uint256)',
 ];
 
+// PonsLaunchFactory — only used to discover which locker holds the launch LP.
+const FACTORY_ABI = ['function locker() view returns (address)'];
+
 const POOL_ABI = [
   'function token0() view returns (address)',
   'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)',
@@ -50,9 +53,11 @@ let infoCache = null;
 
 /**
  * Resolve the launch wiring for `token`: its V3 pool, fee tier, pair token
- * (WETH), deployer, and whether WETH is token0 in the pool (needed to map the
- * locker's (amount0, amount1) fee split). Live mode only.
- * @returns {Promise<{token, pool, poolFee, pairToken, deployer, restrictionEndBlock, wethIsToken0}>}
+ * (WETH), deployer, the LOCKER that holds the LP (read from the token's own
+ * launchFactory().locker() unless LOCKER_ADDRESS overrides it), and whether
+ * WETH is token0 in the pool (needed to map the locker's (amount0, amount1)
+ * fee split). Live mode only.
+ * @returns {Promise<{token, pool, poolFee, pairToken, deployer, locker, restrictionEndBlock, wethIsToken0}>}
  */
 async function getLaunchInfo(token = config.tokenAddress) {
   if (!token) throw new Error('TOKEN_ADDRESS is required');
@@ -65,15 +70,25 @@ async function getLaunchInfo(token = config.tokenAddress) {
   let lastErr;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const [pool, poolFee, pairToken, deployer, restrictionEndBlock] = await Promise.all([
+      const [pool, poolFee, pairToken, deployer, launchFactory, restrictionEndBlock] = await Promise.all([
         t.liquidityPool(),
         t.poolFee(),
         t.pairToken(),
         t.deployer(),
+        t.launchFactory(),
         t.restrictionEndBlock().catch(() => null),
       ]);
       if (!pool || pool === '0x0000000000000000000000000000000000000000') {
         throw new Error(`token ${token} has no V3 pool yet (liquidityPool() is zero)`);
+      }
+      // The locker moves between factory deployments — never trust a hardcoded
+      // address unless the operator explicitly overrides it.
+      let locker = config.locker;
+      if (!locker) {
+        locker = String(
+          await new Contract(launchFactory, FACTORY_ABI, provider).locker()
+        ).toLowerCase();
+        console.log(`[pons] locker auto-discovered from factory ${launchFactory}: ${locker}`);
       }
       const token0 = await new Contract(pool, POOL_ABI, provider).token0();
       infoCache = {
@@ -82,6 +97,7 @@ async function getLaunchInfo(token = config.tokenAddress) {
         poolFee: Number(poolFee),
         pairToken: String(pairToken).toLowerCase(),
         deployer: String(deployer).toLowerCase(),
+        locker,
         restrictionEndBlock: restrictionEndBlock == null ? null : Number(restrictionEndBlock),
         wethIsToken0: String(token0).toLowerCase() === String(pairToken).toLowerCase(),
       };
@@ -94,8 +110,15 @@ async function getLaunchInfo(token = config.tokenAddress) {
   throw lastErr;
 }
 
+/**
+ * The locker to claim from: LOCKER_ADDRESS override, else the address
+ * discovered by getLaunchInfo() — which must have run first (every live caller
+ * does; this throws loudly rather than claiming against the wrong contract).
+ */
 function lockerContract(signer = null) {
-  return new Contract(config.locker, LOCKER_ABI, signer || provider);
+  const address = config.locker || (infoCache && infoCache.locker);
+  if (!address) throw new Error('locker unknown — call getLaunchInfo() first (or set LOCKER_ADDRESS)');
+  return new Contract(address, LOCKER_ABI, signer || provider);
 }
 
 // The locker's protocol cut for our token, percent (the creator receives the
@@ -171,6 +194,7 @@ async function collectCreatorFees() {
   }
 
   const token = config.tokenAddress;
+  await getLaunchInfo(); // resolves the locker (auto-discovery) before claiming
   const decimals = await getDecimals(token);
   const weth = wethContract();
   const [wethBefore, tokensBefore] = await Promise.all([

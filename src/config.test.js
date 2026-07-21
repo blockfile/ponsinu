@@ -12,7 +12,9 @@ test('config exposes the claim-buyback-burn defaults', () => {
   assert.strictEqual(config.chainId, 4663);
   assert.strictEqual(config.deadAddress, '0x000000000000000000000000000000000000dead');
   // Pons launchpad infra on Robinhood Chain (ponsfamily.com deployment).
-  assert.strictEqual(config.locker, '0x31ca5e101941a93a7dd6d0497928700625cf54b5');
+  // The locker is auto-discovered from the token's launchFactory() at runtime;
+  // config only carries an explicit LOCKER_ADDRESS override.
+  assert.strictEqual(config.locker, null);
   assert.strictEqual(config.swapRouter, '0xcaf681a66d020601342297493863e78c959e5cb2');
   assert.strictEqual(config.weth, '0x0bd7d308f8e1639fab988df18a8011f41eacad73');
   // Claim tuning: dust claims are skipped; claimed token fees are burned.
