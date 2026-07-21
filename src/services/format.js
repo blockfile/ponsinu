@@ -100,10 +100,18 @@ function toPublicActivityRow(s, price) {
 
 // Map the backend aggregates to the frontend's flat /stats object. tokenInLp and
 // marketCap have no backend source until the token is listed -> null.
+// The hero (SoftieClone) reads exactly: { marketCap, totalBurned, buybackEth,
+// buybackTarget } — keep those four stable; the rest is extra detail.
 function toPublicStats({ stats, unclaimedEth, operatingWallet, market = {} }) {
   return {
     tokenInLp: market.tokenInLp ?? null, // tokens in the LP (DexScreener); null until listed
     marketCap: market.marketCap ?? null, // USD market cap (DexScreener); null until listed
+    totalBurned: stats.total_tokens_burned || 0, // hero "Total Burned" card
+    // Progress toward the next burn: WETH in the wallet + creator fees pending
+    // in the locker, vs the per-cycle trigger (0.01 ETH). Frontend renders
+    // buybackEth / buybackTarget as the "Next buyback & burn" bar.
+    buybackEth: unclaimedEth == null ? 0 : +unclaimedEth.toFixed(9),
+    buybackTarget: config.burnEthPerCycle > 0 ? config.burnEthPerCycle : null,
     unclaimedFeesEth: unclaimedEth == null ? null : +unclaimedEth.toFixed(9),
     totalCreatorFeesClaimed: stats.total_eth_claimed,
     // ETH spent buying the token, and how much of it has been burned.

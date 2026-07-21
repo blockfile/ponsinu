@@ -62,6 +62,10 @@ test('toPublicStats emits the flat frontend stats object', () => {
   assert.strictEqual(out.operatingWallet, '0xwallet');
   assert.strictEqual(out.unclaimedFeesEth, 0.5);
   assert.strictEqual(out.marketCap, 100);
+  // The SoftieClone hero contract: { marketCap, totalBurned, buybackEth, buybackTarget }.
+  assert.strictEqual(out.totalBurned, 1000);
+  assert.strictEqual(out.buybackEth, 0.5);
+  assert.strictEqual(out.buybackTarget, 0.01);
 });
 
 test('toPublicSummary reports claimed fees and burned totals', () => {
