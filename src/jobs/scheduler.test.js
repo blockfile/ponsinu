@@ -9,6 +9,7 @@ test('pollOnce: skips with no fees, waits below one buy, runs when there is enou
   process.env.DRY_RUN_FEE_PER_POLL = '0'; // no auto-accrual — we control the fee state
   process.env.DRY_RUN_TOKEN_FEE_PER_POLL = '0';
   process.env.BURN_USD_PER_CYCLE = '5';
+  process.env.BUY_PCT = '100';
   delete require.cache[require.resolve('../config')];
   const mongod = await MongoMemoryServer.create();
   process.env.MONGODB_URI = mongod.getUri();
@@ -53,6 +54,7 @@ test('pollOnce: skips with no fees, waits below one buy, runs when there is enou
     delete process.env.DRY_RUN_FEE_PER_POLL;
     delete process.env.DRY_RUN_TOKEN_FEE_PER_POLL;
     delete process.env.BURN_USD_PER_CYCLE;
+    delete process.env.BUY_PCT;
     delete require.cache[require.resolve('../config')];
   }
 });

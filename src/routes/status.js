@@ -64,6 +64,7 @@ router.get('/status', async (req, res, next) => {
         pollSchedule: config.pollSchedule,
         burnEthPerCycle: config.burnEthPerCycle,
         burnUsdPerCycle: config.burnUsdPerCycle,
+        buyPct: config.buyPct,
         deadAddress: config.deadAddress,
       },
       totals: {

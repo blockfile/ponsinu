@@ -44,6 +44,14 @@ const { wallet, ephemeral: walletIsEphemeral } = loadWallet();
 
 const lowerOrNull = (v) => (v ? String(v).trim().toLowerCase() : null);
 
+// Share of each 0.01-ETH cycle spent on the buyback, percent. The remainder is
+// the dev cut — kept by the wallet, unwrapped to native ETH so the next tick's
+// fuel check can't re-spend it (it also keeps gas topped up).
+const buyPct = num(process.env.BUY_PCT, 100);
+if (!(buyPct > 0 && buyPct <= 100)) {
+  throw new Error(`invalid split: BUY_PCT(${buyPct}) must be within (0, 100]`);
+}
+
 const config = {
   port: num(process.env.PORT, 3000),
   dryRun: DRY_RUN,
@@ -84,6 +92,9 @@ const config = {
   // Set to 0 to size the buy in USD instead (BURN_USD_PER_CYCLE).
   burnEthPerCycle: num(process.env.BURN_ETH_PER_CYCLE, 0.01),
   burnUsdPerCycle: num(process.env.BURN_USD_PER_CYCLE, 5), // USD sizing fallback when BURN_ETH_PER_CYCLE=0
+  // BUY_PCT% of each cycle funds the buyback; the rest stays with the wallet as
+  // native ETH (e.g. 80 → buy 0.008, keep 0.002 per 0.01 trigger).
+  buyPct,
   slippagePct: num(process.env.SLIPPAGE_PCT, 5), // V3 buy-swap slippage, percent
   gasReserveEth: num(process.env.GAS_RESERVE_ETH, 0.005), // native ETH floor for gas; topped up by unwrapping WETH
   // Skip the claim leg when the pending creator WETH is below this (saves gas on

@@ -16,7 +16,8 @@ const simvault = require('../evm/simvault');
  *
  *   claim the creator share of the locked-LP trading fees from the
  *   PonsLaunchLocker (arrives as WETH + the token itself)
- *     → spend BURN_USD_PER_CYCLE worth of WETH buying the token on the V3 pool
+ *     → spend BUY_PCT% of the cycle's WETH buying the token on the V3 pool
+ *       (the remainder is the dev cut, kept by the wallet as native ETH)
  *     → BURN the wallet's entire token balance: what was bought PLUS the
  *       claimed token-side fees PLUS any residue (→ DEAD_ADDRESS)
  *
@@ -35,13 +36,15 @@ async function runCycle(buyEthArg) {
   try {
     if (!config.tokenAddress) throw new Error('TOKEN_ADDRESS is required');
 
-    // 1. Size the buy: a fixed BURN_ETH_PER_CYCLE of WETH (default — no price
+    // 1. Size the cycle: a fixed BURN_ETH_PER_CYCLE of WETH (default — no price
     //    feed needed), or BURN_USD_PER_CYCLE at the live price when it's 0.
-    let buyEth = buyEthArg;
+    //    BUY_PCT% of the cycle funds the buyback; the rest is the dev cut, kept
+    //    by the wallet as native ETH.
+    let cycleEth = buyEthArg;
     let price = null;
-    if (buyEth == null) {
+    if (cycleEth == null) {
       if (config.burnEthPerCycle > 0) {
-        buyEth = config.burnEthPerCycle;
+        cycleEth = config.burnEthPerCycle;
       } else {
         price = await getEthPriceUsd();
         if (!(price > 0)) {
@@ -49,10 +52,12 @@ async function runCycle(buyEthArg) {
           log('skipped: no ETH price');
           return repo.getCycleWithSteps(id);
         }
-        buyEth = config.burnUsdPerCycle / price;
+        cycleEth = config.burnUsdPerCycle / price;
       }
     }
-    buyEth = +buyEth.toFixed(9);
+    cycleEth = +cycleEth.toFixed(9);
+    const buyEth = +((cycleEth * config.buyPct) / 100).toFixed(9);
+    const devEth = +(cycleEth - buyEth).toFixed(9);
     if (!(buyEth > 0)) {
       await repo.finishCycle(id, { status: 'skipped', note: 'buy size resolved to 0' });
       log('skipped: buy size 0');
@@ -60,10 +65,10 @@ async function runCycle(buyEthArg) {
     }
 
     // 2. Check the fuel: WETH already in the wallet + creator WETH pending in
-    //    the locker must cover the buy.
+    //    the locker must cover the full cycle (buy + dev cut).
     const [pending, walletWeth] = await Promise.all([getPendingCreatorFees(), getWalletWeth()]);
     const spendable = walletWeth + pending.weth;
-    if (spendable < buyEth) {
+    if (spendable < cycleEth) {
       const authNote =
         !config.dryRun && !pending.authorized && pending.error
           ? ` (claim probe reverted: ${pending.error} — is this wallet the token's deployer?)`
@@ -71,9 +76,9 @@ async function runCycle(buyEthArg) {
       await repo.finishCycle(id, {
         status: 'skipped',
         eth_spent_buy: 0,
-        note: `insufficient fees: ${+walletWeth.toFixed(9)} WETH in wallet + ${+pending.weth.toFixed(9)} pending < ${buyEth} needed${authNote}`,
+        note: `insufficient fees: ${+walletWeth.toFixed(9)} WETH in wallet + ${+pending.weth.toFixed(9)} pending < ${cycleEth} needed${authNote}`,
       });
-      log(`skipped: insufficient fees (${+spendable.toFixed(9)} < ${buyEth} WETH)`);
+      log(`skipped: insufficient fees (${+spendable.toFixed(9)} < ${cycleEth} WETH)`);
       return repo.getCycleWithSteps(id);
     }
 
@@ -152,12 +157,29 @@ async function runCycle(buyEthArg) {
     });
     log(`burned ${burn.burned} ${config.tokenSymbol} (${buy.tokensBought} bought + ${claimedTokensBurned} claimed fees/wallet residue) → ${burn.deadAddress}`);
 
-    // 7. Done.
+    // 7. Keep the dev cut (the (100 - BUY_PCT)% of the cycle): unwrap it to
+    //    native ETH so it stays with the wallet but out of the WETH fuel pool —
+    //    otherwise the next tick would just re-spend it on a buyback.
+    let devKept = 0;
+    if (devEth > 0) {
+      if (config.dryRun) {
+        simvault.spendWeth(devEth);
+        devKept = devEth;
+      } else {
+        devKept = await unwrapWeth(devEth);
+      }
+      if (devKept > 0) {
+        log(`dev cut: kept ${devKept} WETH as native ETH (${+(100 - config.buyPct).toFixed(4)}% of the cycle)`);
+      }
+    }
+
+    // 8. Done.
     await repo.finishCycle(id, {
       status: 'complete',
       mode: 'claim-buyback-burn',
       eth_claimed: claim ? claim.wethClaimed : 0,
       eth_spent_buy: buyEth,
+      eth_dev: devKept,
       tokens_bought: buy.tokensBought,
       tokens_burned: burn.burned,
       burn_sig: burn.signature,

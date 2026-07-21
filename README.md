@@ -8,9 +8,10 @@ Pons locker and spend them buying the token back and burning it:
 ```
 every POLL_SCHEDULE (default */5), once fees ≥ BURN_ETH_PER_CYCLE (default 0.01 WETH):
   claim the creator fees from the PonsLaunchLocker   (arrive as WETH + the token)
-    → buy back BURN_ETH_PER_CYCLE of the token       (Uniswap V3, WETH in)
+    → buy back BUY_PCT% of the cycle                 (Uniswap V3, WETH in)
     → BURN the wallet's ENTIRE token balance: what was bought + the claimed
       token fees + any residue           (send to 0x…dEaD — gone forever)
+    → keep the remaining (100 − BUY_PCT)% with the wallet as native ETH (dev cut)
 ```
 
 When the fees (wallet WETH + pending in the locker) haven't reached 0.01 WETH
@@ -71,6 +72,7 @@ the only per-token setting.
 |---|---|---|
 | `BURN_ETH_PER_CYCLE` | `0.01` | WETH bought back + burned each cycle — the trigger fires every time fees reach this |
 | `BURN_USD_PER_CYCLE` | `5` | USD sizing fallback, used only when `BURN_ETH_PER_CYCLE=0` |
+| `BUY_PCT` | `100` | % of each cycle spent on the buyback+burn; the rest is the dev cut, unwrapped to native ETH in the wallet (set `80` for 80/20) |
 | `POLL_SCHEDULE` | `*/5 * * * *` | how often the scheduler ticks (every 5 min) |
 | `SLIPPAGE_PCT` | `5` | V3 buy slippage tolerance (on top of the pool fee) |
 | `CLAIM_MIN_WETH` | `0.0005` | skip the claim leg while pending WETH is below this (unless the buy needs it) |

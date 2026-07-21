@@ -7,6 +7,7 @@ test('runCycle (DRY_RUN): claim → buy back 0.01 WETH → burn (bought + claime
   process.env.DRY_RUN = 'true';
   process.env.TOKEN_ADDRESS = '0x00000000000000000000000000000000000a1b69';
   process.env.BURN_USD_PER_CYCLE = '5';
+  process.env.BUY_PCT = '100';
   delete require.cache[require.resolve('../config')];
   const mongod = await MongoMemoryServer.create();
   process.env.MONGODB_URI = mongod.getUri();
@@ -55,6 +56,7 @@ test('runCycle (DRY_RUN): claim → buy back 0.01 WETH → burn (bought + claime
     await mongod.stop();
     delete require.cache[require.resolve('../config')];
     delete process.env.BURN_USD_PER_CYCLE;
+    delete process.env.BUY_PCT;
   }
 });
 
@@ -62,6 +64,7 @@ test('runCycle (DRY_RUN): dust pending + wallet covers the buy → no claim step
   process.env.DRY_RUN = 'true';
   process.env.TOKEN_ADDRESS = '0x00000000000000000000000000000000000a1b69';
   process.env.BURN_USD_PER_CYCLE = '5';
+  process.env.BUY_PCT = '100';
   delete require.cache[require.resolve('../config')];
   const mongod = await MongoMemoryServer.create();
   process.env.MONGODB_URI = mongod.getUri();
@@ -86,6 +89,7 @@ test('runCycle (DRY_RUN): dust pending + wallet covers the buy → no claim step
     await mongod.stop();
     delete require.cache[require.resolve('../config')];
     delete process.env.BURN_USD_PER_CYCLE;
+    delete process.env.BUY_PCT;
   }
 });
 
@@ -93,6 +97,7 @@ test('runCycle (DRY_RUN): not enough fees → skipped', async () => {
   process.env.DRY_RUN = 'true';
   process.env.TOKEN_ADDRESS = '0x00000000000000000000000000000000000a1b69';
   process.env.BURN_USD_PER_CYCLE = '5';
+  process.env.BUY_PCT = '100';
   delete require.cache[require.resolve('../config')];
   const mongod = await MongoMemoryServer.create();
   process.env.MONGODB_URI = mongod.getUri();
@@ -115,5 +120,45 @@ test('runCycle (DRY_RUN): not enough fees → skipped', async () => {
     await mongod.stop();
     delete require.cache[require.resolve('../config')];
     delete process.env.BURN_USD_PER_CYCLE;
+    delete process.env.BUY_PCT;
+  }
+});
+
+test('runCycle (DRY_RUN): BUY_PCT=80 → buys 0.008, keeps 0.002 as the dev cut', async () => {
+  process.env.DRY_RUN = 'true';
+  process.env.TOKEN_ADDRESS = '0x00000000000000000000000000000000000a1b69';
+  process.env.BUY_PCT = '80';
+  // The earlier tests loaded cycle.js against a BUY_PCT=100 config instance —
+  // drop the whole src module cache so everything rebinds to the 80/20 config.
+  for (const key of Object.keys(require.cache)) {
+    if (key.includes(`${require('node:path').sep}src${require('node:path').sep}`) && !key.includes('node_modules')) {
+      delete require.cache[key];
+    }
+  }
+  const mongod = await MongoMemoryServer.create();
+  process.env.MONGODB_URI = mongod.getUri();
+  process.env.MONGODB_DB = 'ponsinu_test_split';
+  const db = require('../db/index');
+  const simvault = require('../evm/simvault');
+  const price = require('../evm/price');
+  const { runCycle } = require('./cycle');
+  await db.connect();
+  try {
+    price._prime(3000);
+    simvault.reset({ pendingWeth: 0.05, pendingTokens: 100 });
+    const cycle = await runCycle();
+    assert.strictEqual(cycle.status, 'complete');
+
+    // 0.01 cycle split 80/20: buy 0.008, dev cut 0.002.
+    assert.strictEqual(cycle.eth_spent_buy, 0.008, 'buys with 80% of the cycle');
+    assert.strictEqual(cycle.eth_dev, 0.002, 'keeps 20% as the dev cut');
+
+    // Both halves left the simulated WETH pool: 0.05 claimed − 0.01 cycle.
+    assert.ok(Math.abs(simvault.peek().walletWeth - 0.04) < 1e-9, 'dev cut cannot be re-spent next tick');
+  } finally {
+    await db.close();
+    await mongod.stop();
+    delete require.cache[require.resolve('../config')];
+    delete process.env.BUY_PCT;
   }
 });
